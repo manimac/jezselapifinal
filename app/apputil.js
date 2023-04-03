@@ -4,6 +4,7 @@ const handlebars = require('handlebars');
 const fs = require('fs');
 const MODELS = require("./models");
 const UserDetailModel = MODELS.userDetails;
+const async = require('async');
 
 const apiKey = '4de239d21a197cead36c21be9d305466';
 const apiSecret = 'ad7ba52f89e6fc3eeab86cfe08baaf9e';
@@ -88,7 +89,7 @@ var transporter = nodemailer.createTransport({
     port: 587,
     auth: {
         user: "support@jezsel.nl",
-        pass: "Jez28Sel"
+        pass: "Jez+28=Sel1983"
     },
     tls: { rejectUnauthorized: false },
     // host: 'uranium.da.hostns.io',
@@ -467,15 +468,18 @@ exports.subscribeEmail = function(email) {
 }
 
 
-exports.sendInvoice = function(invoiceObj) {
-    return new Promise(async function(resolve, reject) {
+exports.sendInvoice = function (invoiceObj) {
+    return new Promise(async function (resolve, reject) {
+        invoiceObj.user['preferred_locales'] = ['nl-NL'];
         let customer = await stripe.customers.create(invoiceObj.user);
         var customerId = customer.id;
         const invoice = await stripe.invoices.create({
             customer: customerId,
             collection_method: 'send_invoice',
             days_until_due: 1,
-            pending_invoice_items_behavior:"exclude"
+            pending_invoice_items_behavior: "exclude",
+            account_tax_ids: ["atxi_1MUnSQKmpImSnmCutjMBKT52"],
+            description: "Na betaling van uw factuur, kunt u de betaalde borgsom terugboeken onder uw profiel via Jezsel.nl. Ook kunt u kiezen om uw borgsom te laten staan. Zo bouwt u jaarlijks 5% rente op over uw borg. U kunt op elk gewenst moment uw borg storneren."
         });
 
         const invoiceItem = await stripe.invoiceItems.create({
@@ -485,6 +489,42 @@ exports.sendInvoice = function(invoiceObj) {
             description: invoiceObj.product.description,
             tax_rates: ['txr_1MUlfuKmpImSnmCuAG7PLHhH']
         });
+        if (invoiceObj.extrasOrder && Array.isArray(invoiceObj.extrasOrder) && (invoiceObj.extrasOrder.length>0)) {
+            var processExtras = () => {
+                return new Promise((resolve, reject) => {
+                    var itemsProcessed = 0;
+                    async.eachSeries(invoiceObj.extrasOrder, function (extras, oCallback) {
+                        async function core() {
+                            let invoiceItem3 = await stripe.invoiceItems.create({
+                                customer: customerId,
+                                amount: parseFloat(extras.price * 100),
+                                invoice: invoice.id,
+                                description: extras.name,
+                                tax_rates: ['txr_1MUlfuKmpImSnmCuAG7PLHhH']
+                            });
+                            itemsProcessed++;
+                            oCallback();
+                        }
+                        core();
+                        if (itemsProcessed === (invoiceObj.extrasOrder.length-1)) {
+                            resolve();
+                        }
+                    })
+                });
+            };
+            var dataLists2 = await processExtras();
+        }
+
+        if (invoiceObj.discount) {
+            const invoiceItem2 = await stripe.invoiceItems.create({
+                customer: customerId,
+                amount: -(parseFloat(invoiceObj.discount.price)),
+                invoice: invoice.id,
+                description: invoiceObj.discount.description,
+                tax_rates: ['txr_1MUlfuKmpImSnmCuAG7PLHhH']
+            });
+        }
+
         await stripe.invoices.sendInvoice(invoice.id);
         resolve({ msg: invoice.id })
     });

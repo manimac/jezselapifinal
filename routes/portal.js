@@ -19,6 +19,8 @@ router.get('/findExpiredOrderForInvoiceTemp', order.findExpiredOrderForInvoiceTe
 router.get('/userorders/:id', order.userorders);
 router.get('/userwallet/:id', order.userwallet);
 router.get('/userwithdraws/:id', common.userwithdraws);
+router.get('/userinvoice/:id', order.invoiceslist);
+router.get('/userfindinvoice/:id', order.userfindinvoice);
 router.get('/enquiries', common.enquiries);
 router.post('/forget', common.forget);
 router.get('/user/search', user.userSearch);
@@ -182,6 +184,12 @@ router.post('/certificate', common.updatecertificate);
 // router.delete('/staffingregister/delete/:id', staffing.deleteStaffingRegister);
 
 router.post('/payment/ideal', order.productIdeal);
+router.post('/order/update-read', order.updateRead);
+router.post('/user/update-userread', order.updateUserRead);
+router.post('/updateWithdrawRead', order.updateWithdrawRead);
+router.get('/order/getunReadOrders', order.getunReadOrders);
+router.get('/user/getunReadUsers', order.getunReadUsers);
+router.get('/getunReadWithdraw', order.getunReadWithdraw);
 // router.post('/staffing/ideal', staffing.staffingIdeal);
 // router.post('/transport/ideal', transport.transportIdeal);
 

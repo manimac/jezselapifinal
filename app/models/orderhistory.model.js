@@ -16,8 +16,9 @@ const OrderhistoryModel = (sequelize, Sequelize) => {
         canceleddate: { type: Sequelize.DATE, allowNull: true },
         cancelationfee: { type: Sequelize.STRING, allowNull: true },
         maxcheckoutdateutc: { type: Sequelize.DATE, allowNull: true },
-        mail: { type: Sequelize.BOOLEAN, allowNull: true },
-        invoice: { type: Sequelize.BOOLEAN, allowNull: true },
+        mail: { type: Sequelize.BOOLEAN, allowNull: true },     
+        invoiceid: { type: Sequelize.STRING, allowNull: true },
+        invoice: { type: Sequelize.BOOLEAN, allowNull: true }, 
         minutes_diff: {
             type: Sequelize.VIRTUAL,
             get() {

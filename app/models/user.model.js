@@ -40,6 +40,7 @@ const UserModel = (sequelize, Sequelize) => {
         wallet: { type: Sequelize.STRING, allowNull: true },
         interestused: { type: Sequelize.STRING, allowNull: true },
         teamowner: { type: Sequelize.BOOLEAN, defaultValue: 0 },
+        isreaded: { type: Sequelize.BOOLEAN, allowNull: true },
         path: {
             type: Sequelize.VIRTUAL,
             get() {
