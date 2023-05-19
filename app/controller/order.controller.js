@@ -1352,174 +1352,166 @@ exports.orders = function (req, res) {
     })
 }
 
-exports.myWallet = async function (req, res) {
+exports.myWallet = function (req, res) {
     let user_id = appUtil.getUser(req.headers.authorization).id || null;
     let team_id = req.body.team_id || null;
-    try {
-        /** Withdraw Request added */
-        let withdrawWhere = {};
-        if (team_id) {
-            withdrawWhere[Op.or] = [{
-                user_id: user_id
-            }, {
-                team_id: team_id
-            }]
-        } else {
-            withdrawWhere.user_id = user_id;
-        }
-        withdrawWhere.status = {
-            [Op.or]: [1, 3]
-        };
-        let lastWithdraw = await WithdrawRequestModel.findOne({
-            where: withdrawWhere,
-            order: [['createdAt', 'DESC']],
-        });
-        /** End Withdraw Request added */
-        let whereObj = {
-            maxcheckoutdate: {
-                [Op.lte]: moment().toDate()
-            },
-            status: 1,
-            // type: {
-            //     [Op.ne]: 'wallet'
-            // }
-        };
-        /** Withdraw Request added */
-        if (lastWithdraw) {
-            whereObj[Op.and] = [
-                { maxcheckoutdate: { [Op.gt]: moment(lastWithdraw.createdAt).toDate() } }
-            ];
-        }
-        /** End Withdraw Request added */
-        if (team_id) {
-            whereObj[Op.or] = [{
-                user_id: user_id
-            }, {
-                team_id: team_id
-            }]
-        } else {
-            whereObj.user_id = user_id;
-        }
-
-        OrderModel.findAll({
-            where: whereObj,
-            include: [OrderHistoryModel],
-        }).then(async (orders) => {
-            let totalAmountPaid = orders && orders.reduce(function (a, b) {
-                return a + parseFloat(b.amountpaid);
-            }, 0);
-            /** Remove cancel amount - which immedietly added in wallet */
-            let cancelAmountWithInCheckoutDate = 0;
-            async.eachSeries(orders, function (order, oCallback) {
-                async.eachSeries(order.Orderhistories, function (history, hCallback) {
-                    if (history.status == 0) {
-                        cancelAmountWithInCheckoutDate += parseFloat(history.advancepaid);
-                    }
-                    hCallback();
-                }, (err) => {
-                    oCallback();
-                })
-
-            });
-            let totalWallet = totalAmountPaid - cancelAmountWithInCheckoutDate;
-
-            let whereUser = {};
-            if (team_id) {
-                // whereUser.team_id = team_id;
-                whereUser.teamowner = 1;
-                whereUser[Op.or] = [{
-                    user_id: user_id
-                }, {
-                    team_id: team_id
-                }]
-            } else {
-                whereUser.id = user_id;
-            }
-            // let user = await UserModel.findOne({ where: whereUser });
-            // let totalWallet = Number(totalAmountPaid) + Number(user.wallet);
-
-            let whereWallet = {
-                status: 1
-            }
-            if (team_id) {
-                // whereWallet.team_id = team_id
-                whereWallet[Op.or] = [{
-                    user_id: user_id
-                }, {
-                    team_id: team_id
-                }]
-            } else {
-                whereWallet.user_id = user_id;
-            }
-            let fromWallet = await OrderModel.findAll({
-                where: whereWallet,
-                include: [OrderHistoryModel],
-            });
-            /** Interest calculation */
-            var currentInterest = 0;
-            async.eachSeries(fromWallet, function (element, wCallback) {
-                let fromDate = new Date(element.createdAt);
-                let toDate = new Date();
-                let diffTime = Math.abs(toDate - fromDate);
-                let diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                // let today = new Date();
-                if (diffDays && element.amountpaid) {
-                    let months = (diffDays / 30);
-                    let interestAmount = (((element.amountpaid / 100) * (parseInt(months) * 4.79)) / 12).toFixed(2);
-                    currentInterest += parseFloat(interestAmount);
-                }
-                wCallback();
-            })
-            totalWallet += currentInterest;
-            /** Wallet amount */
-            let totalWalletPaid = fromWallet && fromWallet.reduce(function (a, b) {
-                // return a + parseFloat(b['fromwallet']);
-                return a + (parseFloat(b['fromwallet']) || 0);
-            }, 0);
-            let currentWalletAmount = totalWallet - (totalWalletPaid || 0);
-            /** Cancel amount add */
-            let cancelAmount = 0;
-            async.eachSeries(fromWallet, function (order, oCallback) {
-                async.eachSeries(order.Orderhistories, function (history, hCallback) {
-                    if (history.status == 0) {
-                        cancelAmount += parseFloat(history.advancepaid);
-                    }
-                    hCallback();
-                }, (err) => {
-                    oCallback();
-                })
-
-            });
-            currentWalletAmount += cancelAmount;
-            /** Withdrawrequests */
-            let whereWithdraw = {}
-            whereWithdraw.status = {
-                [Op.ne]: 2
-            };
-            if (team_id) {
-                // whereWithdraw.team_id = team_id;
-                whereWithdraw[Op.or] = [{
-                    user_id: user_id
-                }, {
-                    team_id: team_id
-                }]
-            } else {
-                whereWithdraw.user_id = user_id;
-            }
-            let allWithdrawRequests = await WithdrawRequestModel.findAll({ where: whereWithdraw });
-            let withdrawAmount = allWithdrawRequests && allWithdrawRequests.reduce(function (a, b) {
-                return a + parseFloat(b['amount']);
-            }, 0);
-            currentWalletAmount = currentWalletAmount - withdrawAmount;
-
-            res.send({ wallet: currentWalletAmount && currentWalletAmount.toFixed(2) || 0, interest: currentInterest && currentInterest.toFixed(2) });
-            // res.send(orders);
-        }).catch((err) => {
-            res.status(500).send(err)
-        })
-    } catch (err) {
-        res.status(500).send(err)
+    let whereObj = {
+        maxcheckoutdate: {
+            [Op.lte]: Sequelize.literal("NOW()")
+            // [Op.lte]: moment().toDate()
+        },
+        status: 1,
+        // type: {
+        //     [Op.ne]: 'wallet'
+        // }
+    };
+    if (team_id) {
+        whereObj[Op.or] = [{
+            user_id: user_id
+        }, {
+            team_id: team_id
+        }]
+    } else {
+        whereObj.user_id = user_id;
     }
+
+    OrderModel.findAll({
+        where: whereObj,
+        include: [OrderHistoryModel],
+    }).then(async (orders) => {
+        let totalAmountPaid = orders && orders.reduce(function (a, b) {
+            return a + parseFloat(b.amountpaid);
+        }, 0);
+        /** Remove cancel amount - which immedietly added in wallet */
+        let cancelAmountWithInCheckoutDate = 0;
+        async.eachSeries(orders, function (order, oCallback) {
+            async.eachSeries(order.Orderhistories, function (history, hCallback) {
+                if (history.status == 0) {
+                    cancelAmountWithInCheckoutDate += parseFloat(history.advancepaid);
+                }
+                hCallback();
+            }, (err) => {
+                oCallback();
+            })
+
+        });
+        let totalWallet = totalAmountPaid - cancelAmountWithInCheckoutDate;
+
+        let whereUser = {};
+        if (team_id) {
+            // whereUser.team_id = team_id;
+            whereUser.teamowner = 1;
+            whereUser[Op.or] = [{
+                user_id: user_id
+            }, {
+                team_id: team_id
+            }]
+        } else {
+            whereUser.id = user_id;
+        }
+        // let user = await UserModel.findOne({ where: whereUser });
+        // let totalWallet = Number(totalAmountPaid) + Number(user.wallet);
+
+        let whereWallet = {
+            status: 1
+        }
+        if (team_id) {
+            // whereWallet.team_id = team_id
+            whereWallet[Op.or] = [{
+                user_id: user_id
+            }, {
+                team_id: team_id
+            }]
+        } else {
+            whereWallet.user_id = user_id;
+        }
+        let fromWallet = await OrderModel.findAll({
+            where: whereWallet,
+            include: [OrderHistoryModel],
+        });
+        /** Interest calculation */
+        var currentInterest = 0;
+        async.eachSeries(fromWallet, function (element, wCallback) {
+            let fromDate = new Date(element.createdAt);
+            let toDate = new Date();
+            let diffTime = Math.abs(toDate - fromDate);
+            let diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            // let today = new Date();
+            if (diffDays && element.amountpaid) {
+                let months = (diffDays / 30);
+                let interestAmount = (((element.amountpaid / 100) * (parseInt(months) * 4.79)) / 12).toFixed(2);
+                currentInterest += parseFloat(interestAmount);
+            }
+            wCallback();
+        })
+        //commented on April 16 2023
+        // totalWallet += currentInterest;
+
+        let whereeWallet = {
+            status: 1,
+            maxcheckoutdate: {
+                [Op.gte]: Sequelize.literal("NOW()")
+                // [Op.lte]: moment().toDate()
+            },
+        }
+        if (team_id) {
+            whereeWallet[Op.or] = [{
+                user_id: user_id
+            }, {
+                team_id: team_id
+            }]
+        } else {
+            whereeWallet.user_id = user_id;
+        }
+        let fromeWallet = await OrderModel.findAll({
+            where: whereeWallet,
+            include: [OrderHistoryModel],
+        });
+        /** Wallet amount */
+        let totalWalletPaid = fromeWallet && fromeWallet.reduce(function (a, b) {
+            return a + (parseFloat(b['fromwallet']) || 0);
+        }, 0);
+        let currentWalletAmount = totalWallet - (totalWalletPaid || 0);
+        /** Cancel amount add */
+        let cancelAmount = 0;
+        async.eachSeries(fromWallet, function (order, oCallback) {
+            async.eachSeries(order.Orderhistories, function (history, hCallback) {
+                if (history.status == 0) {
+                    cancelAmount += parseFloat(history.advancepaid);
+                }
+                hCallback();
+            }, (err) => {
+                oCallback();
+            })
+
+        });
+        currentWalletAmount += cancelAmount;
+        /** Withdrawrequests */
+        let whereWithdraw = {}
+        whereWithdraw.status = {
+            [Op.ne]: 2
+        };
+        if (team_id) {
+            // whereWithdraw.team_id = team_id;
+            whereWithdraw[Op.or] = [{
+                user_id: user_id
+            }, {
+                team_id: team_id
+            }]
+        } else {
+            whereWithdraw.user_id = user_id;
+        }
+        let allWithdrawRequests = await WithdrawRequestModel.findAll({ where: whereWithdraw });
+        let withdrawAmount = allWithdrawRequests && allWithdrawRequests.reduce(function (a, b) {
+            return a + parseFloat(b['amount']);
+        }, 0);
+        currentWalletAmount = currentWalletAmount - withdrawAmount;
+
+        res.send({ wallet: currentWalletAmount && currentWalletAmount.toFixed(2) || 0, interest: currentInterest && currentInterest.toFixed(2) });
+        // res.send(orders);
+    }).catch((err) => {
+        res.status(500).send(err)
+    })
 }
 
 exports.cancelOrderHistory = function (req, res) {
@@ -1683,127 +1675,131 @@ exports.userorders = function (req, res) {
     })
 }
 
-exports.userwallet = async function (req, res) {
+exports.userwallet = function (req, res) {
     let user_id = req.params.id || null;
-    try {
-        /** Withdraw Request added */
-        let withdrawWhere = { user_id : user_id };
-        withdrawWhere.status = {
-            [Op.or]: [1, 3]
-        };
-        let lastWithdraw = await WithdrawRequestModel.findOne({
-            where: withdrawWhere,
-            order: [['createdAt', 'DESC']],
-        });
-        /** End Withdraw Request added */
-        let whereObj = {
-            maxcheckoutdate: {
-                [Op.lte]: moment().toDate()
-            },
-            status: 1,
-            // type: {
-            //     [Op.ne]: 'wallet'
-            // }
-        };
-        whereObj.user_id = user_id;
-        /** Withdraw Request added */
-        if (lastWithdraw) {
-            whereObj[Op.and] = [
-                { maxcheckoutdate: { [Op.gt]: moment(lastWithdraw.createdAt).toDate() } }
-            ];
-        }
-        /** End Withdraw Request added */
-        OrderModel.findAll({
-            where: whereObj,
-            include: [OrderHistoryModel],
-        }).then(async (orders) => {
-            let totalAmountPaid = orders && orders.reduce(function (a, b) {
-                return a + parseFloat(b.amountpaid);
-            }, 0);
-            /** Remove cancel amount - which immedietly added in wallet */
-            let cancelAmountWithInCheckoutDate = 0;
-            async.eachSeries(orders, function (order, oCallback) {
-                async.eachSeries(order.Orderhistories, function (history, hCallback) {
-                    if (history.status == 0) {
-                        cancelAmountWithInCheckoutDate += parseFloat(history.advancepaid);
-                    }
-                    hCallback();
-                }, (err) => {
-                    oCallback();
-                })
-
-            });
-            let totalWallet = totalAmountPaid - cancelAmountWithInCheckoutDate;
-
-            let whereUser = {};
-            whereUser.id = user_id;
-            // let user = await UserModel.findOne({ where: whereUser });
-            // let totalWallet = Number(totalAmountPaid) + Number(user.wallet);
-
-            let whereWallet = {
-                status: 1
-            }
-            whereWallet.user_id = user_id;
-            let fromWallet = await OrderModel.findAll({
-                where: whereWallet,
-                include: [OrderHistoryModel],
-            });
-            /** Interest calculation */
-            var currentInterest = 0;
-            async.eachSeries(fromWallet, function (element, wCallback) {
-                let fromDate = new Date(element.createdAt);
-                let toDate = new Date();
-                let diffTime = Math.abs(toDate - fromDate);
-                let diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                // let today = new Date();
-                if (diffDays && element.amountpaid) {
-                    let months = (diffDays / 30);
-                    let interestAmount = (((element.amountpaid / 100) * (parseInt(months) * 4.79)) / 12).toFixed(2);
-                    currentInterest += parseFloat(interestAmount);
+    let whereObj = {
+        maxcheckoutdate: {
+            [Op.lte]: Sequelize.literal("NOW()")
+        },
+        status: 1,
+        // type: {
+        //     [Op.ne]: 'wallet'
+        // }
+    };
+    whereObj.user_id = user_id;
+    OrderModel.findAll({
+        where: whereObj,
+        include: [OrderHistoryModel],
+    }).then(async (orders) => {
+        let totalAmountPaid = orders && orders.reduce(function (a, b) {
+            return a + parseFloat(b.amountpaid);
+        }, 0);
+        /** Remove cancel amount - which immedietly added in wallet */
+        let cancelAmountWithInCheckoutDate = 0;
+        async.eachSeries(orders, function (order, oCallback) {
+            async.eachSeries(order.Orderhistories, function (history, hCallback) {
+                if (history.status == 0) {
+                    cancelAmountWithInCheckoutDate += parseFloat(history.advancepaid);
                 }
-                wCallback();
+                hCallback();
+            }, (err) => {
+                oCallback();
             })
-            totalWallet += currentInterest;
-            /** Wallet amount */
-            let totalWalletPaid = fromWallet && fromWallet.reduce(function (a, b) {
-                // return a + parseFloat(b['fromwallet']);
-                return a + (parseFloat(b['fromwallet']) || 0);
-            }, 0);
-            let currentWalletAmount = totalWallet - (totalWalletPaid || 0);
-            /** Cancel amount add */
-            let cancelAmount = 0;
-            async.eachSeries(fromWallet, function (order, oCallback) {
-                async.eachSeries(order.Orderhistories, function (history, hCallback) {
-                    if (history.status == 0) {
-                        cancelAmount += parseFloat(history.advancepaid);
-                    }
-                    hCallback();
-                }, (err) => {
-                    oCallback();
-                })
 
-            });
-            currentWalletAmount += cancelAmount;
-            /** Withdrawrequests */
-            let whereWithdraw = {}
-            whereWithdraw.status = {
-                [Op.ne]: 2
-            };
-            whereWithdraw.user_id = user_id;
-            let allWithdrawRequests = await WithdrawRequestModel.findAll({ where: whereWithdraw });
-            let withdrawAmount = allWithdrawRequests && allWithdrawRequests.reduce(function (a, b) {
-                return a + parseFloat(b['amount']);
-            }, 0);
-            currentWalletAmount = currentWalletAmount - withdrawAmount;
+        });
+        let totalWallet = totalAmountPaid - cancelAmountWithInCheckoutDate;
 
-            res.send({ wallet: currentWalletAmount && currentWalletAmount.toFixed(2) || 0, interest: currentInterest && currentInterest.toFixed(2) });
-            // res.send(orders);
-        }).catch((err) => {
-            res.status(500).send(err)
+        let whereUser = {};
+        whereUser.id = user_id;
+        // let user = await UserModel.findOne({ where: whereUser });
+        // let totalWallet = Number(totalAmountPaid) + Number(user.wallet);
+
+        let whereWallet = {
+            status: 1
+        }
+        whereWallet.user_id = user_id;
+        let fromWallet = await OrderModel.findAll({
+            where: whereWallet,
+            include: [OrderHistoryModel],
+        });
+        /** Interest calculation */
+        var currentInterest = 0;
+        async.eachSeries(fromWallet, function (element, wCallback) {
+            let fromDate = new Date(element.createdAt);
+            let toDate = new Date();
+            let diffTime = Math.abs(toDate - fromDate);
+            let diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            // let today = new Date();
+            if (diffDays && element.amountpaid) {
+                let months = (diffDays / 30);
+                let interestAmount = (((element.amountpaid / 100) * (parseInt(months) * 4.79)) / 12).toFixed(2);
+                currentInterest += parseFloat(interestAmount);
+            }
+            wCallback();
         })
-    } catch (err) {
-        res.status(500).send(err);
-    }
+        //commented on April 16 2023
+        // totalWallet += currentInterest;
+        
+        
+        /** Wallet amount */
+        // let totalWalletPaid = fromWallet && fromWallet.reduce(function (a, b) {
+        //     // return a + parseFloat(b['fromwallet']);
+        //     return a + (parseFloat(b['fromwallet']) || 0);
+        // }, 0);
+
+
+
+
+        let whereeWallet = {
+            status: 1,
+            user_id: user_id,
+            maxcheckoutdate: {
+                [Op.gte]: Sequelize.literal("NOW()")
+                // [Op.lte]: moment().toDate()
+            },
+        }
+        let fromeWallet = await OrderModel.findAll({
+            where: whereeWallet,
+            include: [OrderHistoryModel],
+        });
+        /** Wallet amount */
+        let totalWalletPaid = fromeWallet && fromeWallet.reduce(function (a, b) {
+            return a + (parseFloat(b['fromwallet']) || 0);
+        }, 0);
+
+
+        let currentWalletAmount = totalWallet - (totalWalletPaid || 0);
+        /** Cancel amount add */
+        let cancelAmount = 0;
+        async.eachSeries(fromWallet, function (order, oCallback) {
+            async.eachSeries(order.Orderhistories, function (history, hCallback) {
+                if (history.status == 0) {
+                    cancelAmount += parseFloat(history.advancepaid);
+                }
+                hCallback();
+            }, (err) => {
+                oCallback();
+            })
+
+        });
+        currentWalletAmount += cancelAmount;
+        /** Withdrawrequests */
+        let whereWithdraw = {}
+        whereWithdraw.status = {
+            [Op.ne]: 2
+        };
+        whereWithdraw.user_id = user_id;
+        let allWithdrawRequests = await WithdrawRequestModel.findAll({ where: whereWithdraw });
+        let withdrawAmount = allWithdrawRequests && allWithdrawRequests.reduce(function (a, b) {
+            return a + parseFloat(b['amount']);
+        }, 0);
+        currentWalletAmount = currentWalletAmount - withdrawAmount;
+
+        res.send({ wallet: currentWalletAmount && currentWalletAmount.toFixed(2) || 0, interest: currentInterest && currentInterest.toFixed(2) });
+        // res.send(orders);
+    }).catch((err) => {
+        res.status(500).send(err)
+    })
 }
 
 exports.findExpiredOrderForInvoice = function (req, res) {
