@@ -1444,7 +1444,8 @@ exports.myWallet = function (req, res) {
             }
             wCallback();
         })
-        totalWallet += currentInterest;
+        //commented on April 16 2023
+        // totalWallet += currentInterest;
 
         let whereeWallet = {
             status: 1,
@@ -1678,7 +1679,7 @@ exports.userwallet = function (req, res) {
     let user_id = req.params.id || null;
     let whereObj = {
         maxcheckoutdate: {
-            [Op.lte]: moment().toDate()
+            [Op.lte]: Sequelize.literal("NOW()")
         },
         status: 1,
         // type: {
@@ -1736,7 +1737,10 @@ exports.userwallet = function (req, res) {
             }
             wCallback();
         })
-        totalWallet += currentInterest;
+        //commented on April 16 2023
+        // totalWallet += currentInterest;
+        
+        
         /** Wallet amount */
         // let totalWalletPaid = fromWallet && fromWallet.reduce(function (a, b) {
         //     // return a + parseFloat(b['fromwallet']);
